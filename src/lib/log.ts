@@ -19,7 +19,6 @@ export async function fetchLog (transactionId: string): Promise<Document|null> {
     const results = await collection.findOne({ transactionId })
     return await Promise.resolve(results)
   } catch (error) {
-    console.error(error.message)
     return await Promise.reject(error)
   }
 }

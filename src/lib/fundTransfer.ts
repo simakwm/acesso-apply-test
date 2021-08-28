@@ -1,10 +1,9 @@
 import { Request, Response } from '@tinyhttp/app'
-import axios from 'axios'
+import axios, { AxiosError, AxiosResponse } from 'axios'
 import { v4 as newTransactionId } from 'uuid'
 import { initializeDb, storeLog } from './log'
 
 const MSG_MISSING_ARGS = 'Something is missing. Check accoutOrigin, accountDestination and value'
-const MSG_ABORTED = 'Operation aborted because an unknown server error occurred'
 const ACCOUNT_API_URL = 'http://localhost:5000/api/Account'
 
 export default async function performTransfer (request: Request, response: Response): Promise<void> {
@@ -40,17 +39,16 @@ export default async function performTransfer (request: Request, response: Respo
 
   // ^ First step: Perform a debit operation on accountOrigin
   try {
-    const debitResponse = await axios.post(ACCOUNT_API_URL, debitData)
-    if (debitResponse.status !== 200) {
-      operationLog.message = MSG_ABORTED
-      response.status(500).send(operationLog)
-      await storeLog(operationLog)
-      return
-    }
-  } catch (error) {
-    let errorMessage = error.message
+    await axios.post(ACCOUNT_API_URL, debitData)
+    await storeLog(operationLog)
+  } catch (error: any) {
+    console.log(error)
+    let errorMessage: string = error.message // generic error
     if (typeof error.response?.data === 'object' && error.response?.data?.title !== undefined) {
-      errorMessage = `Account ${accountOrigin} ${String(error.response.data.title)}`
+      // errors with title
+      errorMessage = `Source account ${accountOrigin} ${String(error.response.data.title)}`
+    } else if (error.response.data !== undefined) {
+      errorMessage = error.response.data // balance error
     }
     operationLog.message = errorMessage
     response.status(500).send(operationLog)
@@ -65,11 +63,12 @@ export default async function performTransfer (request: Request, response: Respo
     operationLog.status = 'Confirmed'
     await storeLog(operationLog)
     response.json(operationLog)
-  } catch (error) {
+  } catch (error: any) {
     // ! Something didn't work
-    let errorMessage = error.message
-    if (typeof error.response?.data === 'object' && error.response?.data?.title !== undefined) {
-      errorMessage = `Account ${accountDestination} ${String(error.response.data.title)}`
+    let errorMessage: string = error.message
+    const title = error.response?.data?.title as string
+    if (typeof error.response?.data === 'object' && title !== undefined) {
+      errorMessage = `Destination account ${accountDestination} ${title}`
     }
     operationLog.message = errorMessage
     await storeLog(operationLog)
