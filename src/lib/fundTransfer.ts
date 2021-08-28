@@ -1,4 +1,5 @@
 import { Request, Response } from '@tinyhttp/app'
+import axios from 'axios'
 import { v4 as newTransactionId } from 'uuid'
 import { initializeDb, storeLog } from './log'
 
