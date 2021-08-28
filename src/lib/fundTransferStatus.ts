@@ -1,5 +1,22 @@
 import { Request, Response } from '@tinyhttp/app'
+import { fetchLog } from './log'
 
-export default function indexHandler (request: Request, response: Response): void {
-  response.send({ result: 'success' })
+const MSG_MISSING_ARGS = 'You need to specify a transactionId'
+
+export default async function fundTransferStatus (request: Request, response: Response): Promise<void> {
+  const { transactionId } = request.params
+  if (transactionId === undefined) {
+    response.status(400).end(MSG_MISSING_ARGS)
+    return
+  }
+
+  try {
+    const operationLog = await fetchLog(transactionId)
+    if (operationLog?._id !== undefined) {
+      delete operationLog._id
+    }
+    response.json(operationLog)
+  } catch (error) {
+    response.send({ status: 'Error', message: `Error fetching logs from ${transactionId}` })
+  }
 }

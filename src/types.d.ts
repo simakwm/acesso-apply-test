@@ -1,5 +1,5 @@
 type TTransactionType = 'Credit' | 'Debit'
-type TOperationStatus = 'error' | 'success'
+type TOperationStatus = 'Error' | 'Confirmed'
 
 interface ITransfer {
   accountOrigin: string
@@ -17,10 +17,4 @@ interface IOperationLog {
   transactionId: string
   status: TOperationStatus
   message?: string
-}
-
-interface IBasicCheck {
-  originExists: boolean
-  destinationExists: boolean
-  enoughBalance: boolean
 }

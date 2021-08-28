@@ -1,6 +1,7 @@
 import { Request, Response } from '@tinyhttp/app'
 import axios from 'axios'
 import { v4 as newTransactionId } from 'uuid'
+import { initializeDb, storeLog } from './log'
 
 const MSG_MISSING_ARGS = 'Something is missing. Check accoutOrigin, accountDestination and value'
 const MSG_ABORTED = 'Operation aborted because an unknown server error occurred'
@@ -8,104 +9,89 @@ const ACCOUNT_API_URL = 'http://localhost:5000/api/Account'
 
 export default async function performTransfer (request: Request, response: Response): Promise<void> {
   const { accountOrigin, accountDestination, value }: ITransfer = request.body
+
+  // Check parameters that came from body
   if (accountOrigin === undefined || accountDestination === undefined || value === undefined) {
-    // ! log this
-    console.error(MSG_MISSING_ARGS)
-    response.status(400).end(MSG_MISSING_ARGS)
+    response.status(400).send(MSG_MISSING_ARGS)
   }
 
+  // We need to test if our database is up before we do anything
+  try {
+    await initializeDb()
+  } catch (error) {
+    response.status(500).send({ status: 'Error', message: 'Database error' })
+    return
+  }
+
+  // Define a transaction id and put into current operation log object
   const transactionId = newTransactionId()
-  const operationLog: IOperationLog = { transactionId, status: 'error', message: '' }
+  const operationLog: IOperationLog = { transactionId, status: 'Error' }
 
   const debitData: IAccountTransaction = {
     accountNumber: accountOrigin,
     value,
     type: 'Debit'
   }
-
   const creditData: IAccountTransaction = {
     accountNumber: accountDestination,
     value,
     type: 'Credit'
   }
 
-  try {
-    let checkFailed = false
-    const checksResults: IBasicCheck = await doBasicChecks({ accountOrigin, accountDestination, value })
-    const { originExists, destinationExists, enoughBalance } = checksResults
-    if (!originExists) {
-      operationLog.message = `Origin account ${accountOrigin} not found`
-      checkFailed = true
-    } else if (!destinationExists) {
-      operationLog.message = `Destination account ${accountDestination} not found`
-      checkFailed = true
-    } else if (!enoughBalance) {
-      operationLog.message = `Not enough balance in origin account ${accountOrigin}`
-      checkFailed = true
-    }
-
-    if (checkFailed) {
-      response.status(500).send(operationLog)
-      return
-    }
-  } catch (error) {
-    console.log(error.response.data)
-    operationLog.message = 'Could not run basic checks'
-    response.status(500).send(operationLog)
-    return
-  }
-
+  // ^ First step: Perform a debit operation on accountOrigin
   try {
     const debitResponse = await axios.post(ACCOUNT_API_URL, debitData)
     if (debitResponse.status !== 200) {
       operationLog.message = MSG_ABORTED
       response.status(500).send(operationLog)
+      await storeLog(operationLog)
       return
     }
   } catch (error) {
-    const errorMessage = error.response.data !== undefined ? error.response.data : error.message
+    let errorMessage = error.message
+    if (typeof error.response?.data === 'object' && error.response?.data?.title !== undefined) {
+      errorMessage = `Account ${accountOrigin} ${String(error.response.data.title)}`
+    }
     operationLog.message = errorMessage
     response.status(500).send(operationLog)
+    await storeLog(operationLog)
     return
   }
 
+  // ^ Final step: Credit operation o accountDestination
   try {
     await axios.post(ACCOUNT_API_URL, creditData)
-    response.json({ transactionId, status: 'success' })
+    // * Everything went well so far, respond and update log
+    operationLog.status = 'Confirmed'
+    await storeLog(operationLog)
+    response.json(operationLog)
   } catch (error) {
-    const errorMessage = error.response.data !== undefined ? error.response.data : error.message
+    // ! Something didn't work
+    let errorMessage = error.message
+    if (typeof error.response?.data === 'object' && error.response?.data?.title !== undefined) {
+      errorMessage = `Account ${accountDestination} ${String(error.response.data.title)}`
+    }
     operationLog.message = errorMessage
+    await storeLog(operationLog)
     response.status(500).send(operationLog)
+    // ^ Rollback previous step
+    rollback(debitData).then(() => {
+      console.info(transactionId, 'rolled back because an error occurred')
+    }).catch(async (rollbackError) => {
+      console.error(rollbackError)
+      const { accountNumber, value, type } = creditData
+      operationLog.message = `Could not rollback: ${accountNumber}, ${value}, ${type}`
+      await storeLog(operationLog)
+    })
   }
 }
 
-async function doBasicChecks (data: ITransfer): Promise<IBasicCheck> {
-  const results: IBasicCheck = {
-    originExists: false,
-    destinationExists: false,
-    enoughBalance: false
-  }
-
+async function rollback (data: IAccountTransaction): Promise<void> {
   try {
-    const originResponse = await axios.get(`${ACCOUNT_API_URL}/${data.accountOrigin}`)
-    results.originExists = true
-    if (originResponse.data.balance >= data.value) {
-      results.enoughBalance = true
-    }
+    data.type = 'Credit'
+    await axios.post(`${ACCOUNT_API_URL}`, data)
+    return await Promise.resolve()
   } catch (error) {
-    if (error.response.status !== 404) {
-      return await Promise.reject(error)
-    }
+    return await Promise.reject(error)
   }
-
-  try {
-    await axios.get(`${ACCOUNT_API_URL}/${data.accountDestination}`)
-    results.destinationExists = true
-  } catch (error) {
-    if (error.response.status !== 404) {
-      return await Promise.reject(error)
-    }
-  }
-
-  return await Promise.resolve(results)
 }
