@@ -3,7 +3,10 @@ import { Collection, Document, InsertOneResult, MongoClient } from 'mongodb'
 
 export async function initializeDb (): Promise<Collection> {
   try {
-    const dbClient = new MongoClient('mongodb://localhost:27017', { serverSelectionTimeoutMS: 5000 })
+    const mongoUrl = process.env.MONGO_URL !== undefined
+      ? process.env.MONGO_URL
+      : 'mongodb://localhost:27017'
+    const dbClient = new MongoClient(mongoUrl, { serverSelectionTimeoutMS: 3000 })
     await dbClient.connect()
     const db = dbClient.db('acesso')
     const collection = db.collection('test')
@@ -16,8 +19,12 @@ export async function initializeDb (): Promise<Collection> {
 export async function fetchLog (transactionId: string): Promise<Document|null> {
   try {
     const collection = await initializeDb()
-    const results = await collection.findOne({ transactionId })
-    return await Promise.resolve(results)
+    const result = await collection
+      .find({ transactionId })
+      .sort({ createdAt: -1 })
+      .limit(1)
+      .toArray()
+    return await Promise.resolve(result)
   } catch (error) {
     return await Promise.reject(error)
   }
@@ -26,11 +33,12 @@ export async function fetchLog (transactionId: string): Promise<Document|null> {
 export async function storeLog (operationLog: IOperationLog): Promise<InsertOneResult> {
   try {
     const createdAt = new Date()
-    // * Log to file as well
-    const line = JSON.stringify({ createdAt, ...operationLog }) + '\n'
-    fs.appendFileSync('./logs/transfers.log', line)
-    // * Log to database
-    const collection = await initializeDb()
+    const { transactionId, status, message } = operationLog
+    const logMessage: string = message === undefined ? '' : message
+    const line = `${createdAt.toLocaleString()} - ${transactionId} - ${status} - "${logMessage}"`
+    console.log(line)
+    fs.appendFileSync('./logs/transfers.log', line + '\n') // * Log to file as well
+    const collection = await initializeDb() // * Log to database
     const insertResult = await collection.insertOne({ ...operationLog, createdAt })
     return await Promise.resolve(insertResult)
   } catch (error) {

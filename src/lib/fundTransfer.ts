@@ -4,7 +4,57 @@ import { v4 as newTransactionId } from 'uuid'
 import { initializeDb, storeLog } from './log'
 
 const MSG_MISSING_ARGS = 'Something is missing. Check accoutOrigin, accountDestination and value'
-const ACCOUNT_API_URL = 'http://localhost:5000/api/Account'
+
+class Account {
+  apiUrl = 'http://localhost:5000/api/Account'
+  accountNumber: string = ''
+
+  constructor (accountNumber: string) {
+    this.accountNumber = accountNumber
+  }
+
+  private async doRequest (data: IAccountTransaction): Promise<any> {
+    try {
+      const response = await axios.post(this.apiUrl, data)
+      return await Promise.resolve(response.data)
+    } catch (error: any) {
+      let errorMessage: string = error.message // generic error
+      if (typeof error.response?.data === 'object' && error.response?.data?.title !== undefined) {
+        // errors with title
+        errorMessage = `Account ${this.accountNumber} ${String(error.response.data.title)}`
+      } else if (error.response.data !== undefined) {
+        errorMessage = error.response.data // balance error
+      }
+      return await Promise.reject(new Error(errorMessage))
+    }
+  }
+
+  async credit (value: number): Promise<any> {
+    const creditData: IAccountTransaction = {
+      accountNumber: this.accountNumber,
+      value,
+      type: 'Credit'
+    }
+    try {
+      return await this.doRequest(creditData)
+    } catch (error) {
+      return await Promise.reject(error)
+    }
+  }
+
+  async debt (value: number): Promise<any> {
+    const debitData: IAccountTransaction = {
+      accountNumber: this.accountNumber,
+      value,
+      type: 'Debit'
+    }
+    try {
+      return await this.doRequest(debitData)
+    } catch (error) {
+      return await Promise.reject(error)
+    }
+  }
+}
 
 export default async function performTransfer (request: Request, response: Response): Promise<void> {
   const { accountOrigin, accountDestination, value }: ITransfer = request.body
@@ -24,73 +74,41 @@ export default async function performTransfer (request: Request, response: Respo
 
   // Define a transaction id and put into current operation log object
   const transactionId = newTransactionId()
-  const operationLog: IOperationLog = { transactionId, status: 'Error' }
+  const operationLog: IOperationLog = { transactionId, status: 'In Queue' }
+  await storeLog(operationLog)
 
-  const debitData: IAccountTransaction = {
-    accountNumber: accountOrigin,
-    value,
-    type: 'Debit'
-  }
-  const creditData: IAccountTransaction = {
-    accountNumber: accountDestination,
-    value,
-    type: 'Credit'
-  }
+  const origin = new Account(accountOrigin)
+  const destination = new Account(accountDestination)
 
-  // ^ First step: Perform a debit operation on accountOrigin
-  try {
-    await axios.post(ACCOUNT_API_URL, debitData)
-    await storeLog(operationLog)
-  } catch (error: any) {
-    console.log(error)
-    let errorMessage: string = error.message // generic error
-    if (typeof error.response?.data === 'object' && error.response?.data?.title !== undefined) {
-      // errors with title
-      errorMessage = `Source account ${accountOrigin} ${String(error.response.data.title)}`
-    } else if (error.response.data !== undefined) {
-      errorMessage = error.response.data // balance error
-    }
-    operationLog.message = errorMessage
-    response.status(500).send(operationLog)
-    await storeLog(operationLog)
-    return
-  }
+  // * answer request early
+  response.json(operationLog)
 
-  // ^ Final step: Credit operation o accountDestination
-  try {
-    await axios.post(ACCOUNT_API_URL, creditData)
-    // * Everything went well so far, respond and update log
-    operationLog.status = 'Confirmed'
-    await storeLog(operationLog)
-    response.json(operationLog)
-  } catch (error: any) {
-    // ! Something didn't work
-    let errorMessage: string = error.message
-    const title = error.response?.data?.title as string
-    if (typeof error.response?.data === 'object' && title !== undefined) {
-      errorMessage = `Destination account ${accountDestination} ${title}`
-    }
-    operationLog.message = errorMessage
-    await storeLog(operationLog)
-    response.status(500).send(operationLog)
-    // ^ Rollback previous step
-    rollback(debitData).then(() => {
-      console.info(transactionId, 'rolled back because an error occurred')
-    }).catch(async (rollbackError) => {
-      console.error(rollbackError)
-      const { accountNumber, value, type } = creditData
-      operationLog.message = `Could not rollback: ${accountNumber}, ${value}, ${type}`
+  // ^ informs processing status
+  operationLog.status = 'Processing'
+  await storeLog(operationLog)
+
+  origin.debt(value).then(async () => {
+    // credit value into destination account
+    destination.credit(value).then(async () => {
+      // * everything went well. Change status to confirmed
+      operationLog.status = 'Confirmed'
       await storeLog(operationLog)
+    }).catch(async (error) => {
+      // ! an error occurred during credit operation. Change status
+      operationLog.status = 'Error'
+      operationLog.message = error.message
+      await storeLog(operationLog)
+      // ! tries to performs a rollback
+      try {
+        await origin.credit(value)
+      } catch (error) {
+        console.error(error.message)
+      }
     })
-  }
-}
-
-async function rollback (data: IAccountTransaction): Promise<void> {
-  try {
-    data.type = 'Credit'
-    await axios.post(`${ACCOUNT_API_URL}`, data)
-    return await Promise.resolve()
-  } catch (error) {
-    return await Promise.reject(error)
-  }
+  }).catch(async (error) => {
+    // ! debt operation error
+    operationLog.status = 'Error'
+    operationLog.message = error.message
+    await storeLog(operationLog)
+  })
 }

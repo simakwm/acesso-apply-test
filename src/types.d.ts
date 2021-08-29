@@ -1,5 +1,5 @@
 type TTransactionType = 'Credit' | 'Debit'
-type TOperationStatus = 'Error' | 'Confirmed'
+type TOperationStatus = 'Error' | 'Confirmed' | 'In Queue' | 'Processing'
 
 interface ITransfer {
   accountOrigin: string
