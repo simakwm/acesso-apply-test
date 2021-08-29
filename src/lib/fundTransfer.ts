@@ -101,7 +101,7 @@ export default async function performTransfer (request: Request, response: Respo
       // ! tries to performs a rollback
       try {
         await origin.credit(value)
-      } catch (error) {
+      } catch (error: any) {
         console.error(error.message)
       }
     })

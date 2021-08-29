@@ -3,10 +3,7 @@ import { Collection, Document, InsertOneResult, MongoClient } from 'mongodb'
 
 export async function initializeDb (): Promise<Collection> {
   try {
-    const mongoUrl = process.env.MONGO_URL !== undefined
-      ? process.env.MONGO_URL
-      : 'mongodb://localhost:27017'
-    const dbClient = new MongoClient(mongoUrl, { serverSelectionTimeoutMS: 3000 })
+    const dbClient = new MongoClient('mongodb://mongodb:27017/', { serverSelectionTimeoutMS: 3000 })
     await dbClient.connect()
     const db = dbClient.db('acesso')
     const collection = db.collection('test')
