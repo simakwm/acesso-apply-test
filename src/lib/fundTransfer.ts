@@ -6,7 +6,7 @@ import { initializeDb, storeLog } from './log'
 const MSG_MISSING_ARGS = 'Something is missing. Check accoutOrigin, accountDestination and value'
 
 class Account {
-  apiUrl = 'http://localhost:5000/api/Account'
+  apiUrl = 'http://accounts:80/api/Account'
   accountNumber: string = ''
 
   constructor (accountNumber: string) {

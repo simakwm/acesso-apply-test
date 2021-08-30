@@ -1,6 +1,8 @@
+version: '3.8'
+
 services:
   acesso_apply_test:
-    image: acesso_apply_test
+    image: simakwm/acesso_apply_test
     container_name: acesso_apply_test
     build: .
     expose: 
@@ -9,15 +11,16 @@ services:
       - 3000:3000
     links:
       - mongodb
-    # environment:
-    #   - MONGO_URL=mongodb://mongo:27017/
-    
-    # command: yarn dev
-  # accounts:
-  #   image: baldini/testacesso
-  #   ports:
-  #     - 5000:80
+    depends_on:
+      - mongodb
+      - accounts
+  accounts:
+    container_name: accounts
+    image: baldini/testacesso
+    ports:
+      - 5000:80
   mongodb:
+    container_name: mongodb
     image: mongo:latest
     ports:
       - 27017:27017
