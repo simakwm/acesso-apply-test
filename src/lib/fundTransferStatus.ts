@@ -3,8 +3,10 @@ import { fetchLog } from './log'
 
 const MSG_MISSING_ARGS = 'You need to specify a transactionId'
 
+/* Handles GET /api/fund-transfer/:transactionId */
 export default async function fundTransferStatus (request: Request, response: Response): Promise<void> {
   const { transactionId } = request.params
+
   if (transactionId === undefined) {
     response.status(400).end(MSG_MISSING_ARGS)
     return
@@ -12,6 +14,10 @@ export default async function fundTransferStatus (request: Request, response: Re
 
   try {
     const operationLog = await fetchLog(transactionId)
+    if (operationLog === undefined || operationLog === null) {
+      response.status(404).send({ status: 'Error', message: `${transactionId} log not found` })
+      return
+    }
     if (operationLog?._id !== undefined) {
       delete operationLog._id
     }

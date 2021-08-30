@@ -9,6 +9,7 @@ const app = new App()
 app.use(logger())
 app.use(json())
 
+// our routes
 app.post('/api/fund-transfer', fundTransfer)
 app.get('/api/fund-transfer/:transactionId', fundTransferStatus)
 

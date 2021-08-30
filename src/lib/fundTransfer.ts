@@ -1,61 +1,11 @@
 import { Request, Response } from '@tinyhttp/app'
-import axios from 'axios'
 import { v4 as newTransactionId } from 'uuid'
+import Account from './Account'
 import { initializeDb, storeLog } from './log'
 
 const MSG_MISSING_ARGS = 'Something is missing. Check accoutOrigin, accountDestination and value'
 
-class Account {
-  apiUrl = 'http://accounts:80/api/Account'
-  accountNumber: string = ''
-
-  constructor (accountNumber: string) {
-    this.accountNumber = accountNumber
-  }
-
-  private async doRequest (data: IAccountTransaction): Promise<any> {
-    try {
-      const response = await axios.post(this.apiUrl, data)
-      return await Promise.resolve(response.data)
-    } catch (error: any) {
-      let errorMessage: string = error.message // generic error
-      if (typeof error.response?.data === 'object' && error.response?.data?.title !== undefined) {
-        // errors with title
-        errorMessage = `Account ${this.accountNumber} ${String(error.response.data.title)}`
-      } else if (error.response.data !== undefined) {
-        errorMessage = error.response.data // balance error
-      }
-      return await Promise.reject(new Error(errorMessage))
-    }
-  }
-
-  async credit (value: number): Promise<any> {
-    const creditData: IAccountTransaction = {
-      accountNumber: this.accountNumber,
-      value,
-      type: 'Credit'
-    }
-    try {
-      return await this.doRequest(creditData)
-    } catch (error) {
-      return await Promise.reject(error)
-    }
-  }
-
-  async debt (value: number): Promise<any> {
-    const debitData: IAccountTransaction = {
-      accountNumber: this.accountNumber,
-      value,
-      type: 'Debit'
-    }
-    try {
-      return await this.doRequest(debitData)
-    } catch (error) {
-      return await Promise.reject(error)
-    }
-  }
-}
-
+/* Handles POST /api/fund-transfer */
 export default async function performTransfer (request: Request, response: Response): Promise<void> {
   const { accountOrigin, accountDestination, value }: ITransfer = request.body
 

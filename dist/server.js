@@ -12,6 +12,7 @@ const fundTransferStatus_1 = __importDefault(require("./lib/fundTransferStatus")
 const app = new app_1.App();
 app.use((0, logger_1.logger)());
 app.use((0, milliparsec_1.json)());
+// our routes
 app.post('/api/fund-transfer', fundTransfer_1.default);
 app.get('/api/fund-transfer/:transactionId', fundTransferStatus_1.default);
 app.listen(3000);
